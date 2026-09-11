@@ -237,4 +237,20 @@ const only = (name, templates, triggers = [], counts = [], status = "published")
   assert.ok(!has(w({ type: "time", startAfter: { type: "days", value: 3 } }, "Normal"), "parked forever"));
 }
 
+
+// --- a filename you recognise in a ticket, not a location id ---------------
+{
+  const { fileStem } = require("./core.js");
+  const day = new Date().toISOString().slice(0, 10);
+  assert.strictEqual(fileStem("Acme Co", "LOC123"), `Acme-Co-${day}`);
+  assert.strictEqual(fileStem("", "LOC123"), `LOC123-${day}`, "no account name falls back to the id");
+  assert.strictEqual(fileStem(null, "LOC123"), `LOC123-${day}`);
+  assert.strictEqual(fileStem("Bob's Plumbing & Air, LLC", "L"), `Bobs-Plumbing-Air-LLC-${day}`,
+    "punctuation a filesystem would choke on has to go");
+  assert.ok(!fileStem("x".repeat(90), "L").startsWith("x".repeat(41)), "long names get cut");
+  assert.ok(!/--|-\d{4}-\d\d-\d\d$/.test(fileStem("A   B", "L").replace(/-\d{4}-\d\d-\d\d$/, "")),
+    "collapsed spaces must not leave double dashes");
+  assert.strictEqual(fileStem("  Trailing  ", "L"), `Trailing-${day}`, "no dangling dash before the date");
+}
+
 console.log("ok  -  graph traversal, opportunities, assignment, impact, drift");

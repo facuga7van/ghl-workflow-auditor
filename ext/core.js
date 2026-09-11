@@ -582,6 +582,15 @@ function graph(models){
 const ghlLink = (loc, wfId) =>
   `https://app.gohighlevel.com/v2/location/${loc}/automation/workflows/${wfId}`;
 
+// `audit-Acme-Co-2026-09-11.md` explains itself in a ticket. The location id
+// does not. Falls back to the id when there is no readable account name.
+function fileStem(title, loc){
+  const s = String(title || "").trim()
+    .replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-")
+    .replace(/^-|-$/g, "").slice(0, 40).replace(/-$/, "");
+  return `${s || loc}-${new Date().toISOString().slice(0, 10)}`;
+}
+
 // ---------- full data bundle, meant to be handed to an AI coding agent ----------
 function buildBundle(loc, models, findings, edges, rawFields, rawTags){
   return {
@@ -734,5 +743,5 @@ function toMarkdown(loc, models, findings, edges, diff){
 }
 
 if (typeof module !== "undefined") module.exports =
-  { SHAPE_VERSION, arr, inputs, parseCurl, textOf, exits, walk, orderSteps, extract, brokenModel,
+  { SHAPE_VERSION, arr, inputs, parseCurl, fileStem, ghlLink, textOf, exits, walk, orderSteps, extract, brokenModel,
     detect, graph, boundaries, buildBundle, toMarkdown, snapshotOf, diffSnapshots };

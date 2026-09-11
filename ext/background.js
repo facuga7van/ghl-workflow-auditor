@@ -56,6 +56,9 @@ async function start(tabId){
     const { report, bundle, snapshot, diff } = await runAudit(s, say, rules, before);
     await chrome.storage.local.set({ [key]: snapshot });
     base.changed = diff ? diff.changed.length + diff.added.length + diff.removed.length : 0;
+    // Without this a first run and an unchanged account look identical, and
+    // "nothing changed since last time" is worth saying out loud.
+    base.hadBaseline = !!(before && before.length);
 
     // The last progress tick is fire-and-forget. Let it land before writing the
     // final state, or a stray "running" can overwrite "done" and hang the popup.
@@ -63,7 +66,10 @@ async function start(tabId){
     // Stamp the build into the dump. A .json that lands in a ticket months later
     // has to say which parser produced it.
     bundle.meta.toolVersion = chrome.runtime.getManifest().version;
-    await chrome.storage.session.set({ result: { loc: s.loc, report, bundle } });
+    bundle.meta.account = s.title;
+    // The account NAME travels with the result so downloads can be called
+    // something a human recognises instead of a 20-character location id.
+    await chrome.storage.session.set({ result: { loc: s.loc, title: s.title, report, bundle } });
     await setProg({ ...base, status: "done", done: base.total,
                     lines: [...lines, `done: ${bundle.summary.findings} findings`] });
   } catch (e) {

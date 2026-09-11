@@ -104,6 +104,9 @@ const settle = async (store, ms = 4000) => {
     assert.ok(calls.some(u => u.includes("count-per-step")), "in-flight counts must be pulled");
     assert.strictEqual(store.result.bundle.meta.toolVersion, "9.9.9",
       "the dump must say which build produced it, or a .json in an old ticket is unreadable");
+    assert.strictEqual(store.result.title, "Acme Co",
+      "the account NAME has to travel with the result, or downloads are named after a location id");
+    assert.strictEqual(store.result.bundle.meta.account, "Acme Co");
   }
 
   // --- an expired token must fail loudly, not audit with it ----------------

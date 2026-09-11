@@ -53,7 +53,12 @@ The audit starts on its own. **You can close the popup while it runs** — the w
 |---|---|
 | **Download report (.md)** | Findings, trigger graph, inventory |
 | **Download full data (.json)** | Every step of every workflow, with ids |
-| **Open full report** | The whole thing as a page |
+| **copy** | Same thing straight to the clipboard — skip the Downloads folder |
+| **Open full report** | The whole thing as a page, with filters |
+
+Files are named after the account, not its id: `audit-Acme-Co-2026-09-11.md`.
+
+In the full report you can filter by severity, show **published only**, search, and **group by workflow** so everything wrong with one is together. Every workflow name is a link straight into GoHighLevel, and every finding has a one-click copy for pasting into a ticket.
 
 The JSON carries an embedded `_readme` explaining its own structure, so you can hand it straight to an AI agent and it will know that a workflow is a graph rather than a list, that every step carries the branch it's on (`main > Lead`), that fields are referenced by id, and that `inFlight` is people inside the workflow *right now*.
 

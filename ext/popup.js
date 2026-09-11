@@ -47,10 +47,22 @@ function paint(prog, result){
     show("#again", !!prog.at);
   }
   if (status === "done" && result){
-    const s = result.bundle.summary;
-    $("#nwf").textContent = s.workflows;
-    $("#nfi").textContent = s.findings;
-    $("#nhi").textContent = result.bundle.findings.filter(f => f.severity === "HIGH").length;
+    const b = result.bundle;
+    const sev = k => b.findings.filter(f => f.severity === k).length;
+    $("#nhi").textContent = sev("HIGH");
+    $("#nmd").textContent = sev("MEDIUM");
+    $("#nlo").textContent = sev("LOW");
+    // The number that decides whether you open this now or on Monday.
+    $("#sum").textContent = b.findings.length
+      ? `${b.summary.live ?? 0} of ${b.findings.length} are in published workflows`
+      : `nothing found across ${b.summary.workflows} workflows`;
+    $("#sum").className = "sum" + (b.findings.length ? "" : " clean");
+
+    const d = b.changedSinceLastAudit;
+    $("#changed").textContent = d
+      ? `${d.changed.length + d.added.length + d.removed.length} workflows changed since the last audit`
+      : (prog && prog.hadBaseline ? "nothing changed since the last audit" : "");
+    show("#changed", !!$("#changed").textContent);
   }
 }
 
@@ -65,7 +77,7 @@ chrome.storage.session.onChanged.addListener(refresh);
 async function start(){
   const { tabId, loc } = await activeLoc();
   if (!loc){
-    paint({ status: "error", error: "This tab is not inside a GoHighLevel sub-account. Open the account (the URL has /location/...) and click the icon again." }, null);
+    paint({ status: "error", error: "This tab is not inside a GoHighLevel sub-account. Open Automations, open any workflow, and click the icon again." }, null);
     return;
   }
   await chrome.runtime.sendMessage({ type: "start", tabId });
@@ -77,24 +89,45 @@ function download(text, name, mime){
   a.download = name;
   a.click();
 }
-const stamp = loc => `${loc}-${new Date().toISOString().slice(0,10)}`;
+
+async function copy(text, btn){
+  const was = btn.textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = "copied"; }
+  catch { btn.textContent = "could not copy"; }
+  setTimeout(() => { btn.textContent = was; }, 1500);
+}
+
+const stamp = r => fileStem(r.title, r.loc);   // core.js
 
 async function grab(){ return (await chrome.storage.session.get("result")).result; }
 
 $("#go").onclick = start;
 $("#again").onclick = start;
-$("#open").onclick = () => chrome.tabs.create({ url: "panel.html" });
+
+// Focus the report tab if it is already open. Clicking three times should not
+// leave you with three identical tabs to close.
+$("#open").onclick = async () => {
+  const url = chrome.runtime.getURL("panel.html");
+  try {
+    const [open] = await chrome.tabs.query({ url });
+    if (open) return chrome.tabs.update(open.id, { active: true });
+  } catch (e) { /* fall through to opening a new one */ }
+  chrome.tabs.create({ url });
+};
+
 $("#dlmd").onclick = async () => {
-  const r = await grab(); download(r.report, `audit-${stamp(r.loc)}.md`, "text/markdown");
+  const r = await grab(); download(r.report, `audit-${stamp(r)}.md`, "text/markdown");
 };
 $("#dljson").onclick = async () => {
   const r = await grab();
-  download(JSON.stringify(r.bundle, null, 1), `workflows-${stamp(r.loc)}.json`, "application/json");
+  download(JSON.stringify(r.bundle, null, 1), `workflows-${stamp(r)}.json`, "application/json");
 };
+// Straight to the clipboard beats download, open the folder, drag it in.
+$("#cpmd").onclick = async e => copy((await grab()).report, e.target);
+$("#cpjson").onclick = async e => copy(JSON.stringify((await grab()).bundle, null, 1), e.target);
 
 // First thing to ask when someone reports a bug: which build are they on.
 $("#ver").textContent = "v" + chrome.runtime.getManifest().version;
-$("#opts").onclick = e => { e.preventDefault(); chrome.runtime.openOptionsPage(); };
 $("#opts").onclick = e => { e.preventDefault(); chrome.runtime.openOptionsPage(); };
 
 // ---------- open ----------
