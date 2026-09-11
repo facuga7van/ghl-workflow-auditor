@@ -30,7 +30,7 @@ Read-only. It never writes to your account.
 
 ## Install
 
-No Web Store listing. Install it unpacked:
+Install it unpacked (a Chrome Web Store listing is in review):
 
 1. Download a [release](https://github.com/facuga7van/ghl-workflow-auditor/releases) and unzip, or `git clone` this repo
 2. `chrome://extensions` → turn on **Developer mode** (top right)
@@ -189,11 +189,17 @@ bash pack.sh            # build a distributable zip
 
 No dependencies, no build step. Plain JavaScript a browser runs directly.
 
+`pack.sh` builds two zips: one for installing unpacked, and one with the manifest at the root for the Chrome Web Store. `tools/make-icons.js` regenerates the icons, which are drawn in code rather than kept only as binaries.
+
 **Adding a detector:** one `add(severity, workflow, rule, message)` in `detect()` in `ext/core.js`, plus a test. The bar is that GoHighLevel doesn't already tell you — if the UI shows a red box, it doesn't belong. Keep the message concrete: say what happens in production, not what's wrong in the abstract.
 
 **White-label domain?** Add it in two places or the tab is invisible: `host_permissions` in `ext/manifest.json` and `GHL_HOSTS` in `ext/audit.js`.
 
 Issues and PRs welcome — especially a detector for a failure mode that bit you, or endpoint changes when GoHighLevel moves something.
+
+## Privacy
+
+No server, no account, no analytics. The only requests it makes go to GoHighLevel's own API, as you. Your session token is never stored or transmitted. Results live in memory and are cleared when Chrome closes. Full policy: [PRIVACY.md](PRIVACY.md).
 
 ## License
 
