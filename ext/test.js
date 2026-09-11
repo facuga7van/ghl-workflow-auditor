@@ -1,7 +1,8 @@
 // node test.js  -- run it before touching core.js.
 // One synthetic account that trips the rules that have actually broken builds.
 const assert = require("assert");
-const { parseCurl, orderSteps, extract, brokenModel, detect, graph, toMarkdown, buildBundle } = require("./core.js");
+const { parseCurl, orderSteps, walk, exits, extract, brokenModel, detect, graph, boundaries,
+        toMarkdown, buildBundle, snapshotOf, diffSnapshots } = require("./core.js");
 
 const has = (fs, rule) => fs.some(f => f.rule === rule);
 const sevOf = (fs, rule) => (fs.find(f => f.rule === rule) || {}).sev;
@@ -267,3 +268,4 @@ assert.ok(md.includes(`**${findings.length} findings**`));
 }
 
 console.log(`ok  -  ${findings.length} findings, ${edges.length} edges on the fixture`);
+

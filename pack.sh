@@ -15,8 +15,9 @@ for f in "${RUNTIME[@]}"; do
 done
 
 # A zip that ships broken logic is worse than no zip.
-node ext/test.js >/dev/null && node ext/test-flow.js >/dev/null \
-  || { echo "tests fail: not packing"; exit 1; }
+for t in test.js test-graph.js test-flow.js; do
+  node "ext/$t" >/dev/null || { echo "ext/$t fails: not packing"; exit 1; }
+done
 
 VER=$(node -p "require('./ext/manifest.json').version")
 OUT="dist/ghl-workflow-auditor-v$VER.zip"

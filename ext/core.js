@@ -29,6 +29,14 @@ function parseCurl(raw){
 // is worse than crashing.
 const arr = v => v == null ? [] : Array.isArray(v) ? v : [v];
 
+// Opportunity and pipeline steps do NOT keep their values as plain properties.
+// They live in `__customInputFields__` as a list of {filterField, value} pairs,
+// which is why an audit that reads `attributes.stageId` finds nothing at all.
+const inputs = a => Object.fromEntries(
+  arr((a || {}).__customInputFields__)
+    .filter(f => f && f.filterField)
+    .map(f => [f.filterField, f.value]));
+
 function textOf(node){
   const a = node.attributes || {}, out = [];
   for (const k of ["message","body","text","sms","html","subject"]) if (typeof a[k] === "string") out.push(a[k]);
@@ -38,18 +46,88 @@ function textOf(node){
   return out.join("\n");
 }
 
-// Real execution order comes from the `next` pointer, not the `order` field.
-function orderSteps(steps){
-  if (!steps.length) return [];
-  const byId = Object.fromEntries(steps.map(s => [s.id, s]));
-  const targets = new Set(steps.map(s => s.next).filter(Boolean));
-  const head = steps.find(s => !targets.has(s.id)) || steps[0];
-  const out = [], seen = new Set();
-  let cur = head;
-  while (cur && !seen.has(cur.id)){ seen.add(cur.id); out.push(cur); cur = byId[cur.next]; }
-  for (const s of steps) if (!seen.has(s.id)) out.push(s);   // branch tails of if/else
-  return out;
+// A workflow is a GRAPH, not a list. `next` is a string on a linear step and an
+// ARRAY on anything that branches, and a `goto` jumps via attributes instead of
+// `next` entirely. Walking it as a chain used to stop dead at the first if/else:
+// measured against a real 66-workflow account, that left 73% of the steps out of
+// the traversal, piled at the end in arbitrary order — while the JSON dump told
+// whoever read it that this was "real execution order".
+//
+// Returns every outgoing edge of a step as {to, label}, where the label is the
+// branch name a human sees on the canvas.
+function exits(s){
+  const a = s.attributes || {};
+  if (s.type === "goto")
+    return a.targetNodeId ? [{ to: a.targetNodeId, label: "go to" }] : [];
+
+  const nx = arr(s.next).filter(Boolean);
+  if (s.type === "if_else"){
+    const br = arr(a.branches);
+    // GHL ships one entry in `branches` per condition and then ONE MORE id in
+    // `next` for the implicit else. If the counts match there is no else arm.
+    return nx.map((to, i) => ({
+      to,
+      label: (br[i] && br[i].name) || (i >= br.length ? "else" : `branch ${i + 1}`),
+      isElse: i >= br.length,
+    }));
+  }
+  if (s.type === "workflow_split"){
+    const tr = arr(a.transitions);
+    return nx.map((to, i) => ({ to, label: (tr[i] && tr[i].name) || `path ${i + 1}` }));
+  }
+  return nx.map(to => ({ to, label: "" }));
 }
+
+// Depth-first from the entry node, which is the order a human reads the canvas:
+// a branch is followed to its end before the next one starts.
+//
+//   steps[]      in traversal order, each carrying `path`, `depth` and `unreachable`
+//   edges[]      {from, to, label} inside this workflow
+//   cycles[]     step ids that close a loop back onto themselves
+//   unreachable  steps no path from the entry node can ever hit
+function walk(all){
+  const steps = arr(all).filter(s => s && typeof s === "object" && s.id);
+  if (!steps.length) return { steps: [], edges: [], cycles: [], unreachable: [] };
+
+  const byId = Object.fromEntries(steps.map(s => [s.id, s]));
+  const edges = [];
+  for (const s of steps) for (const e of exits(s))
+    if (byId[e.to]) edges.push({ from: s.id, to: e.to, label: e.label });
+
+  // The entry node is the one nothing points at. A `goto` target can also be
+  // pointed at, which is exactly why a workflow can have no clean entry at all.
+  const pointedAt = new Set(edges.map(e => e.to));
+  const head = steps.find(s => !pointedAt.has(s.id)) || steps[0];
+
+  const out = [], seen = new Set(), cycles = [], stack = new Set();
+  const byFrom = {};
+  for (const e of edges) (byFrom[e.from] ||= []).push(e);
+
+  (function go(id, path, depth){
+    const s = byId[id];
+    if (!s) return;
+    if (stack.has(id)){ cycles.push(id); return; }   // loops back on itself
+    if (seen.has(id)) return;                        // branches rejoining is normal
+    seen.add(id); stack.add(id);
+    s.path = path; s.depth = depth;
+    out.push(s);
+    for (const e of (byFrom[id] || []))
+      go(e.to, e.label ? `${path} > ${e.label}` : path, depth + (e.label ? 1 : 0));
+    stack.delete(id);
+  })(head.id, "main", 0);
+
+  // Anything left cannot be reached from the entry node. That is a finding, not
+  // a parsing problem: those steps will never run.
+  const unreachable = [];
+  for (const s of steps) if (!seen.has(s.id)){
+    s.path = "(unreachable)"; s.depth = 0; s.unreachable = true;
+    unreachable.push(s.id); out.push(s);
+  }
+  return { steps: out, edges, cycles, unreachable };
+}
+
+// Kept for callers that only want the ordering.
+const orderSteps = steps => walk(steps).steps;
 
 // One workflow with a shape we have never seen must not cost you the other 60.
 // DESIGN.md says an unexpected shape has to abort and shout rather than fail
@@ -64,17 +142,19 @@ function brokenModel(entry, err){
 
 function extract(entry, detail, triggers, counts, fieldById, funnelIdPattern){
   const raw = arr(((detail||{}).workflowData || {}).templates).filter(s => s && typeof s === "object");
-  const steps = orderSteps(raw);
+  const flow = walk(raw);
+  const steps = flow.steps;
   const dd = detail || {};
   const m = { id: entry.id, name: entry.name, status: entry.status, version: entry.version,
     // workflow-level toggles: invisible on the canvas, and they break things silently
     settings: { stopOnResponse: dd.stopOnResponse ?? null, allowReEntry: dd.allowMultiple ?? null,
                 removeContactFromLastStep: dd.removeContactFromLastStep ?? null,
                 timezone: dd.timezone ?? null },
-    steps, triggers: arr(triggers).filter(t => t && typeof t === "object"), counts: arr(counts),
+    steps, flow, triggers: arr(triggers).filter(t => t && typeof t === "object"), counts: arr(counts),
     tagsAdded:new Set(), tagsRemoved:new Set(), tagsTrigger:new Set(),
     fieldsWritten:new Set(), fieldsWatched:new Set(), wfRemoved:new Set(), wfAdded:new Set(),
-    merge:new Set(), copy:[], funnels:new Set() };
+    merge:new Set(), copy:[], funnels:new Set(),
+    pipelines:new Set(), stages:new Set(), opps:[], assigns:[] };
   const fname = ref => (fieldById[ref] || fieldById[String(ref).replace("contact.","")] || {}).key
                        || String(ref).replace("contact.","");
   for (const s of steps){
@@ -84,6 +164,25 @@ function extract(entry, detail, triggers, counts, fieldById, funnelIdPattern){
     else if (s.type === "update_contact_field") arr(a.fields).forEach(f => f && m.fieldsWritten.add(fname(f.field)));
     else if (s.type === "remove_from_workflow") arr(a.workflow_id).forEach(w => w && m.wfRemoved.add(w));
     else if (s.type === "add_to_workflow") arr(a.workflow_id).forEach(w => w && m.wfAdded.add(w));
+    // Pipelines, stages and ownership: a fifth of the steps in a real sales
+    // account, and the part the business actually looks at every morning.
+    if (/opportunity/.test(s.type)){
+      const f = inputs(a);
+      const pipe = a.pipelineId || f.pipelineId || f.pipeline_id || "";
+      const stage = f.pipelineStageId || "";
+      if (pipe) m.pipelines.add(pipe);
+      if (stage) m.stages.add(stage);
+      m.opps.push({ stepId: s.id, node: s.name || s.type, path: s.path,
+                    action: s.type.includes("create") ? "create"
+                          : s.type.includes("find") ? "find" : "update",
+                    pipeline: pipe, stage });
+    }
+    if (s.type === "assign_user" || s.type === "internal-add-opportunity-owner")
+      m.assigns.push({ stepId: s.id, node: s.name || s.type, path: s.path,
+                       users: arr(a.user_list).length,
+                       mergeField: String(a.customUserList || ""),
+                       onlyUnassigned: !!a.only_unassigned_contact });
+
     // Only when you configured a pattern: a bad regex must never cost the audit.
     if (s.type === "webhook" && funnelIdPattern){
       try {
@@ -114,6 +213,39 @@ const NO_RULES = {
   routingTagPrefixes: [],      // prefixes that route to a line/inbox/channel
   funnelIdPattern: "",         // regex with ONE capture group, matched on webhook URLs
 };
+
+// Every step that can be reached BEFORE the given one. This is what makes
+// "is this gated?" answerable at all, and it is only possible now that the
+// traversal follows branches instead of stopping at the first one.
+function ancestry(flow){
+  const back = {};
+  for (const e of arr(flow && flow.edges)) (back[e.to] ||= []).push(e.from);
+  return id => {
+    const out = new Set(), q = [id];
+    while (q.length){
+      for (const p of (back[q.pop()] || [])) if (!out.has(p)){ out.add(p); q.push(p); }
+    }
+    return out;
+  };
+}
+
+// Field keys a step tests for presence, wherever GHL hides its conditions.
+function gatedFields(s){
+  const a = s.attributes || {};
+  const out = new Set();
+  const scan = branches => {
+    for (const br of arr(branches)) for (const sg of arr(br && br.segments))
+      for (const c of arr(sg && sg.conditions)){
+        if (!c) continue;
+        const op = String(c.conditionOperator || "");
+        if (op === "has_value" || op === "has_no_value" || op === "==" || op === "is-any-of")
+          out.add(String(c.conditionSubType || c.field || "").toLowerCase());
+      }
+  };
+  scan(a.branches);                       // if_else
+  scan((a.condition || {}).branches);     // wait, type: condition
+  return out;
+}
 
 // ---------- detectors: each one is a hard rule learned from a broken build ----------
 function detect(models, fieldKeys, accountTags, rules){
@@ -205,6 +337,136 @@ function detect(models, fieldKeys, accountTags, rules){
         && m.triggers.some(t => ["appointment","customer_appointment"].includes(t.type)))
       add("MEDIUM", wf, "appointment flow without re-entry",
           "appointment trigger with Allow Re-Entry OFF: anyone who reschedules drops out and gets no reminders");
+    // ---- structure: only answerable since the walk follows branches ----------
+    const up = ancestry(m.flow);
+    const byId = Object.fromEntries(m.steps.map(s => [s.id, s]));
+
+    for (const id of arr(m.flow && m.flow.cycles)){
+      ctxStep = id;
+      add("HIGH", wf, "loops back on itself",
+          `\`${(byId[id] || {}).name || id}\` is reached again from its own branch: contacts go round forever, sending every message on the way`);
+      ctxStep = null;
+    }
+    for (const id of arr(m.flow && m.flow.unreachable)){
+      ctxStep = id;
+      add("MEDIUM", wf, "unreachable step",
+          `\`${(byId[id] || {}).name || id}\` cannot be reached from the start of this workflow: it will never run`);
+      ctxStep = null;
+    }
+
+    for (const s of m.steps){
+      const a = s.attributes || {};
+      ctxStep = s.id;
+
+      // An if/else with no else arm: whoever fails the condition stops here.
+      if (s.type === "if_else"){
+        const outs = exits(s);
+        if (outs.length && !outs.some(e => e.isElse))
+          add("HIGH", wf, "branch with no else",
+              `\`${s.name || "If/Else"}\` has no else arm: a contact that does not match the condition stops here and never reaches the rest of the workflow`);
+      }
+
+      if (s.type === "wait"){
+        // Convention across every account that runs an AI agent: waiting for a
+        // reply switches the agent off. The fix is a custom field plus a
+        // condition wait, which is why this is worth calling out by name.
+        if (a.type === "reply")
+          add("HIGH", wf, "wait for reply",
+              `\`${s.name || "Wait"}\` waits for a reply. If an AI agent is answering on this channel, this step switches it off. Use a custom field and a condition wait instead`);
+
+        // A condition wait tests whether something is TRUE, not whether it
+        // CHANGED. If the field is already set when the contact arrives, the
+        // wait is satisfied instantly and the whole pause does nothing.
+        if (a.type === "condition"){
+          const watched = gatedFields(s);
+          const before = up(s.id);
+          const cleared = [...before].some(pid => {
+            const p = byId[pid];
+            return p && p.type === "update_contact_field" &&
+              arr((p.attributes || {}).fields).some(f =>
+                f && (f.value === "" || f.value == null) &&
+                [...watched].some(w => w && String(f.field || "").toLowerCase().includes(w)));
+          });
+          if (watched.size && !cleared)
+            add("MEDIUM", wf, "condition wait never resets",
+                `\`${s.name || "Wait"}\` waits for a condition that nothing clears beforehand: if it is already true when the contact arrives, the wait ends immediately`);
+        }
+
+        const sa = a.startAfter || {};
+        if (sa.type === "days" && Number(sa.value) >= 365)
+          add("MEDIUM", wf, "parked forever",
+              `\`${s.name || "Wait"}\` waits ${sa.value} days: this is a dead end, and anyone reaching it stays inside the workflow indefinitely`);
+      }
+
+      // Assigns nobody. Empty user list, no round-robin, no merge field.
+      if (s.type === "assign_user" || s.type === "internal-add-opportunity-owner"){
+        const users = arr(a.user_list).length;
+        if (!users && !String(a.customUserList || ""))
+          add("HIGH", wf, "assigns to nobody",
+              `\`${s.name || "Assign"}\` has an empty user list: the lead stays unowned and no one is told about it`);
+        else if (!users && String(a.customUserList || "").includes("{{"))
+          add("MEDIUM", wf, "owner from a merge field",
+              `\`${s.name || "Assign"}\` assigns via \`${a.customUserList}\`. If that value is empty the step assigns nobody, silently`);
+      }
+
+      // A webhook still pointing at a development machine.
+      if (s.type === "webhook"){
+        const u = String(a.url || "");
+        if (/localhost|127\.0\.0\.1|\.ngrok|:\d{4,5}\/|webhook\.site|requestbin|\/test\//i.test(u))
+          add("HIGH", wf, "webhook points at a test endpoint",
+              `\`${s.name || "Webhook"}\` posts to \`${u.slice(0, 60)}\`: that looks like a development endpoint left in a live workflow`);
+      }
+
+      ctxStep = null;
+    }
+
+    // A merge field in a message with nothing upstream checking it is there.
+    // GoHighLevel does not abort on an empty merge field, it sends "Hey its ,".
+    for (const c of m.copy){
+      if (!["sms","email","drip"].includes(c.type)) continue;
+      const used = [...String(c.body).matchAll(MERGE_RE)]
+        .map(x => x[1]).filter(f => f.startsWith("contact."))
+        .map(f => f.replace("contact.", "").toLowerCase());
+      if (!used.length) continue;
+      const before = up(c.stepId);
+      const gates = new Set();
+      for (const pid of before) for (const g of gatedFields(byId[pid] || {})) gates.add(g);
+      const ungated = used.filter(f => ![...gates].some(g => g && (g.includes(f) || f.includes(g))));
+      if (ungated.length){
+        ctxStep = c.stepId;
+        add("MEDIUM", wf, "merge field with no gate",
+            `\`${c.node}\` sends \`{{contact.${ungated[0]}}}\` and nothing upstream checks it has a value: an empty one goes out as-is, mid-sentence`);
+        ctxStep = null;
+      }
+    }
+
+    // Opportunity hygiene.
+    const creates = m.opps.filter(o => o.action === "create");
+    const finds = m.opps.filter(o => o.action === "find");
+    for (const o of creates){
+      ctxStep = o.stepId;
+      if (!finds.length)
+        add("MEDIUM", wf, "opportunity with no lookup",
+            `\`${o.node}\` creates an opportunity and nothing in this workflow looks for an existing one first: a returning contact gets a duplicate`);
+      if (!o.stage)
+        add("MEDIUM", wf, "opportunity with no stage",
+            `\`${o.node}\` creates an opportunity without setting a stage: it lands wherever the pipeline defaults to`);
+      ctxStep = null;
+    }
+    // Created in one stage and moved in the same run: the first stage is crossed
+    // in zero seconds, so every report and automation keyed to it never sees it.
+    for (const o of creates){
+      const moved = m.opps.find(x => x.action === "update" && x.stage && x.stage !== o.stage &&
+                                     up(x.stepId).has(o.stepId));
+      const waited = moved && [...up(moved.stepId)].some(pid => (byId[pid] || {}).type === "wait");
+      if (moved && !waited){
+        ctxStep = moved.stepId;
+        add("MEDIUM", wf, "stage crossed instantly",
+            `the opportunity is created and then moved to another stage with no wait in between: the first stage lasts zero seconds and nothing keyed to it will ever fire`);
+        ctxStep = null;
+      }
+    }
+
     if (!m.steps.length)
       add("MEDIUM", wf, "empty workflow", "not a single step: a shell someone left half-built");
     if (!m.triggers.length && m.status === "published" && m.steps.length)
@@ -225,6 +487,35 @@ function detect(models, fieldKeys, accountTags, rules){
         funnels.map(f => `\`${f.slice(0,10)}\` (${funnelOwners[f].join(", ")})`).join("  vs  ") +
         ". If they share a trigger tag, one campaign gets credited the other's conversions");
 
+  // Two published workflows listening for exactly the same thing. Both fire,
+  // in no guaranteed order, and whichever writes last wins. In an account you
+  // inherited this is the single most common way two builds collide.
+  const sig = tr => JSON.stringify([tr.type, arr(tr.conditions).filter(Boolean)
+    .map(c => [c.field, c.operator, JSON.stringify(c.value)]).sort()]);
+  const byTrigger = {};
+  for (const m of models){
+    if (m.parseError || m.status !== "published") continue;
+    for (const tr of m.triggers) (byTrigger[sig(tr)] ||= new Set()).add(m.name);
+  }
+  for (const [s, owners] of Object.entries(byTrigger)){
+    if (owners.size < 2) continue;
+    const type = (JSON.parse(s)[0] || "trigger");
+    add("MEDIUM", "(account)", "duplicate trigger",
+        `${owners.size} published workflows fire on the same \`${type}\` with identical conditions: ` +
+        `${[...owners].join(", ")}. They all run, in no guaranteed order`);
+  }
+
+  // A stage that every workflow moves opportunities INTO and none reacts to, or
+  // one nothing ever writes. Both mean the pipeline column is decorative.
+  const stagesWritten = new Set(models.flatMap(m => [...(m.stages || [])]));
+  if (stagesWritten.size){
+    const pipes = new Set(models.flatMap(m => [...(m.pipelines || [])]));
+    if (pipes.size > 1)
+      add("LOW", "(account)", "opportunities across pipelines",
+          `workflows in this account write into ${pipes.size} different pipelines: ` +
+          `check that nothing moves the same opportunity between them, because it stays the SAME opportunity`);
+  }
+
   const vocab = [...new Set(models.flatMap(m => [...m.tagsAdded, ...m.tagsTrigger]))].sort();
   for (const a of vocab) for (const b of vocab)
     if (a !== b && b.includes(a))
@@ -236,8 +527,38 @@ function detect(models, fieldKeys, accountTags, rules){
     const k = f.wf + "|" + f.rule;
     if (seen.has(k)) seen.get(k).n++; else seen.set(k, { ...f, n: 1 });
   }
+
+  // Severity is the rule. Impact is whether it is happening to anyone RIGHT NOW.
+  // A HIGH in a draft nobody is in outranks nothing; a HIGH in a published
+  // workflow with 200 contacts sitting in it is what you fix this morning.
+  const byId2 = Object.fromEntries(models.map(m => [m.id, m]));
+  const live = m => m && m.status === "published";
+  const inFlight = m => arr(m && m.counts).reduce((a, c) => a + ((c && c.count) || 0), 0);
+  for (const f of seen.values()){
+    const m = byId2[f.workflowId];
+    f.live = f.wf === "(account)" ? true : live(m);
+    f.contacts = f.wf === "(account)" ? 0 : inFlight(m);
+    // rank: live findings first, then by how many people are exposed
+    f.impact = (f.live ? 2 : 0) + (f.contacts > 0 ? 1 : 0);
+  }
+
   const order = { HIGH:0, MEDIUM:1, LOW:2 };
-  return [...seen.values()].sort((a,b) => order[a.sev] - order[b.sev] || a.wf.localeCompare(b.wf));
+  return [...seen.values()].sort((a,b) =>
+    order[a.sev] - order[b.sev] ||
+    b.impact - a.impact ||
+    b.contacts - a.contacts ||
+    a.wf.localeCompare(b.wf));
+}
+
+// Where the chain leaves the workflows. A trigger tag that no workflow applies
+// is not a dead end: an AI agent, a person or an integration writes it. Saying
+// so is the difference between an incomplete map and a map that knows its edge.
+function boundaries(models){
+  const written = new Set(models.flatMap(m => [...m.tagsAdded]));
+  const out = [];
+  for (const m of models) for (const t of m.tagsTrigger)
+    if (!written.has(t)) out.push({ workflow: m.name, workflowId: m.id, waitsFor: t });
+  return out;
 }
 
 function graph(models){
@@ -257,6 +578,10 @@ function graph(models){
   return [...e.values()].sort((x,y) => x.from.localeCompare(y.from));
 }
 
+// A finding you can click beats a finding you have to go hunt for by name.
+const ghlLink = (loc, wfId) =>
+  `https://app.gohighlevel.com/v2/location/${loc}/automation/workflows/${wfId}`;
+
 // ---------- full data bundle, meant to be handed to an AI coding agent ----------
 function buildBundle(loc, models, findings, edges, rawFields, rawTags){
   return {
@@ -264,10 +589,10 @@ function buildBundle(loc, models, findings, edges, rawFields, rawTags){
       "Full GoHighLevel sub-account workflow dump, produced by the GHL Audit Chrome extension.",
       "Meant to be read by an AI coding agent so it can write a runbook: what to change and exactly where.",
       "",
-      "workflows[].steps is in REAL EXECUTION ORDER, resolved by following each step's `next`",
-      "pointer. The `order` field GHL returns is unreliable, do not sort by it. Every step keeps",
-      "its original `id`, `type` and full `attributes`, so any change can be addressed precisely",
-      "as workflow.id + step.id.",
+      "workflows[].steps is in TRAVERSAL ORDER: depth-first from the entry node, so a branch runs",
+      "to its end before the next one starts. The `order` field GHL returns is unreliable, do not",
+      "sort by it. Every step keeps its original `id`, `type` and full `attributes`, so any change",
+      "can be addressed precisely as workflow.id + step.id.",
       "",
       "workflows[].writes / .reads are the resolved tag and field names each workflow touches.",
       "graph[] holds the implicit chains: A fires B because A writes a tag or field that B",
@@ -284,6 +609,25 @@ function buildBundle(loc, models, findings, edges, rawFields, rawTags){
       "after the lead already replied; an appointment flow with allowReEntry false drops anyone",
       "who reschedules, with no error anywhere.",
       "",
+      "A workflow is a GRAPH. `next` is a string on a linear step and an ARRAY on anything that",
+      "branches, and a `goto` jumps through attributes.targetNodeId instead of `next`. Do not read",
+      "steps[] as a straight line: each step carries `path` (the branch route, e.g. `main > Lead`)",
+      "and `depth`. workflows[].flow.edges holds every internal edge with its branch label,",
+      "flow.cycles lists steps that loop back onto themselves, and flow.unreachable lists steps no",
+      "path can reach. A step marked `unreachable: true` never runs.",
+      "",
+      "opportunities[] and assigns[] are resolved from __customInputFields__, where GoHighLevel",
+      "hides pipeline, stage and ownership values as {filterField, value} pairs rather than plain",
+      "properties. An assign with users: 0 and no mergeField assigns NOBODY.",
+      "",
+      "boundaries[] is where the chain leaves the workflows: a tag some trigger waits for that no",
+      "workflow applies. An AI agent, a person or an integration writes it, and none of that is in",
+      "this file. Treat those as open ends, not dead ends.",
+      "",
+      "findings[] are ordered by severity and then by IMPACT: `live` means the workflow is",
+      "published, `contactsInWorkflow` is how many people are sitting in it right now. A HIGH in a",
+      "draft nobody is in matters less than a MEDIUM happening to 200 people.",
+      "",
       "inFlight is count-per-step: contacts sitting inside the workflow RIGHT NOW, not history.",
       "An empty array is normal and does not mean the workflow is dead.",
       "",
@@ -298,37 +642,87 @@ function buildBundle(loc, models, findings, edges, rawFields, rawTags){
             tool: "ghl-audit extension", source: "backend.leadconnectorhq.com (internal API)" },
     summary: { workflows: models.length, published: models.filter(m => m.status === "published").length,
                steps: models.reduce((a,m) => a + m.steps.length, 0),
-               findings: findings.length, edges: edges.length },
+               findings: findings.length, edges: edges.length,
+               live: findings.filter(f => f.live).length },
     findings: findings.map(f => ({ severity: f.sev, workflow: f.wf, workflowId: f.workflowId || null,
-                                   stepId: f.stepId || null, rule: f.rule, detail: f.msg, occurrences: f.n })),
+                                   stepId: f.stepId || null, rule: f.rule, detail: f.msg, occurrences: f.n,
+                                   live: !!f.live, contactsInWorkflow: f.contacts || 0,
+                                   openInGhl: f.workflowId ? ghlLink(loc, f.workflowId) : null })),
     graph: edges,
-    account: { customFields: rawFields, tags: rawTags },
+    // Where the chain leaves the workflows: tags a trigger waits for that no
+    // workflow writes. Something outside does it, and this file cannot see it.
+    boundaries: boundaries(models.filter(m => !m.parseError)),
+    account: { customFields: rawFields, tags: rawTags,
+               pipelines: [...new Set(models.flatMap(m => [...(m.pipelines || [])]))],
+               stages: [...new Set(models.flatMap(m => [...(m.stages || [])]))] },
     workflows: models.map(m => ({
       id: m.id, name: m.name, status: m.status, version: m.version,
+      openInGhl: ghlLink(loc, m.id),
       // Present only when the workflow could not be parsed. Everything below is
       // EMPTY in that case, which means "not read", never "nothing there".
       ...(m.parseError ? { parseError: m.parseError } : {}),
       settings: m.settings,
       triggers: m.triggers,
       steps: m.steps.map((s, i) => ({ position: i + 1, id: s.id, name: s.name || null,
-                                      type: s.type, next: s.next || null, attributes: s.attributes || {} })),
+                                      type: s.type, path: s.path || "main", depth: s.depth || 0,
+                                      ...(s.unreachable ? { unreachable: true } : {}),
+                                      next: s.next || null, attributes: s.attributes || {} })),
+      // The shape of the workflow, resolved: every internal edge with the branch
+      // label a human sees on the canvas, plus anything that loops or is orphaned.
+      flow: { edges: arr(m.flow && m.flow.edges), cycles: arr(m.flow && m.flow.cycles),
+              unreachable: arr(m.flow && m.flow.unreachable) },
       writes: { tags: [...m.tagsAdded], removesTags: [...m.tagsRemoved], fields: [...m.fieldsWritten],
-                addsToWorkflows: [...m.wfAdded], removesFromWorkflows: [...m.wfRemoved] },
+                addsToWorkflows: [...m.wfAdded], removesFromWorkflows: [...m.wfRemoved],
+                pipelines: [...(m.pipelines || [])], stages: [...(m.stages || [])] },
+      opportunities: m.opps || [],
+      assigns: m.assigns || [],
       reads: { triggerTags: [...m.tagsTrigger], watchedFields: [...m.fieldsWatched] },
       inFlight: m.counts || [],
     })),
   };
 }
 
-function toMarkdown(loc, models, findings, edges){
+// What changed since the last audit of this account. GoHighLevel bumps a
+// workflow's `version` on every save, so drift is free to detect: no diffing of
+// step trees, just a number. Indexed by id, never by name — a rename is a
+// CHANGE, not a delete plus an add.
+function snapshotOf(models){
+  return models.map(m => ({ id: m.id, name: m.name, status: m.status, version: m.version }));
+}
+
+function diffSnapshots(before, now){
+  if (!arr(before).length) return null;
+  const was = Object.fromEntries(arr(before).map(w => [w.id, w]));
+  const is  = Object.fromEntries(arr(now).map(w => [w.id, w]));
+  const out = { added: [], removed: [], changed: [] };
+  for (const w of arr(now)){
+    const b = was[w.id];
+    if (!b){ out.added.push({ name: w.name, status: w.status }); continue; }
+    const how = [];
+    if (b.version !== w.version) how.push(`edited (v${b.version} -> v${w.version})`);
+    if (b.status !== w.status) how.push(`${b.status} -> ${w.status}`);
+    if (b.name !== w.name) how.push(`renamed from "${b.name}"`);
+    if (how.length) out.changed.push({ name: w.name, how: how.join(", ") });
+  }
+  for (const w of arr(before)) if (!is[w.id]) out.removed.push({ name: w.name });
+  return (out.added.length || out.removed.length || out.changed.length) ? out : null;
+}
+
+function toMarkdown(loc, models, findings, edges, diff){
   const pub = models.filter(m => m.status === "published").length;
   const steps = models.reduce((a,m) => a + m.steps.length, 0);
   const today = new Date().toISOString().slice(0,10);
+  const live = findings.filter(f => f.live).length;
   return [`# Workflow audit - ${loc}`, "", `generated ${today} by the GHL Audit extension`, "",
-    `**${models.length} workflows** (${pub} published) - ${steps} steps - **${findings.length} findings** - ${edges.length} edges`, "",
+    `**${models.length} workflows** (${pub} published) - ${steps} steps - **${findings.length} findings** (${live} in published workflows) - ${edges.length} edges`, "",
+    ...(diff ? ["## Changed since the last audit", "",
+      ...diff.changed.map(c => `- **${esc(c.name)}** - ${c.how}`),
+      ...diff.added.map(c => `- **${esc(c.name)}** - NEW (${c.status})`),
+      ...diff.removed.map(c => `- ~~${esc(c.name)}~~ - gone`),
+      "", "Audit these first: the rest of the account has not been touched.", ""] : []),
     "## Findings", "",
-    findings.length ? ["| Sev | Workflow | Rule | What happens |","|---|---|---|---|",
-      ...findings.map(f => `| ${f.sev} | ${esc(f.wf)} | ${f.rule} | ${esc(f.msg)}${f.n>1?` (x${f.n})`:""} |`)].join("\n") : "None.",
+    findings.length ? ["| Sev | Live | In WF | Workflow | Rule | What happens |","|---|---|---|---|---|---|",
+      ...findings.map(f => `| ${f.sev} | ${f.live?"yes":"draft"} | ${f.contacts||""} | ${esc(f.wf)} | ${f.rule} | ${esc(f.msg)}${f.n>1?` (x${f.n})`:""} |`)].join("\n") : "None.",
     "", "## What fires what", "",
     edges.length ? "```\n" + edges.map(e => `  ${e.from}  ->  ${e.to}     [${e.via}]`).join("\n") + "\n```"
                  : "None.",
@@ -340,4 +734,5 @@ function toMarkdown(loc, models, findings, edges){
 }
 
 if (typeof module !== "undefined") module.exports =
-  { SHAPE_VERSION, arr, parseCurl, textOf, orderSteps, extract, brokenModel, detect, graph, buildBundle, toMarkdown };
+  { SHAPE_VERSION, arr, inputs, parseCurl, textOf, exits, walk, orderSteps, extract, brokenModel,
+    detect, graph, boundaries, buildBundle, toMarkdown, snapshotOf, diffSnapshots };

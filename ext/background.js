@@ -48,7 +48,14 @@ async function start(tabId){
     };
 
     const { rules } = await chrome.storage.local.get("rules");
-    const { report, bundle } = await runAudit(s, say, rules);
+    // Snapshots persist in storage.local, per account: they are four fields per
+    // workflow, no client content, and they are what turns a one-off audit into
+    // "what did they change since Tuesday".
+    const key = "snap:" + s.loc;
+    const before = (await chrome.storage.local.get(key))[key];
+    const { report, bundle, snapshot, diff } = await runAudit(s, say, rules, before);
+    await chrome.storage.local.set({ [key]: snapshot });
+    base.changed = diff ? diff.changed.length + diff.added.length + diff.removed.length : 0;
 
     // The last progress tick is fire-and-forget. Let it land before writing the
     // final state, or a stray "running" can overwrite "done" and hang the popup.

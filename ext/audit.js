@@ -106,7 +106,7 @@ async function api(url, tok){
 
 // ---------- the run ----------
 // `say(line, done, total)` is called on every step so a view can follow along.
-async function runAudit(session, say, rules){
+async function runAudit(session, say, rules, before){
   const { tok, loc } = session;
 
   say("listing workflows...");
@@ -177,8 +177,9 @@ async function runAudit(session, say, rules){
 
   const findings = detect(models, fieldKeys, accountTags, rules);
   const edges = graph(models);
-  return {
-    report: toMarkdown(loc, models, findings, edges),
-    bundle: buildBundle(loc, models, findings, edges, rawFields, rawTags),
-  };
+  const snapshot = snapshotOf(models);
+  const diff = diffSnapshots(before, snapshot);
+  const bundle = buildBundle(loc, models, findings, edges, rawFields, rawTags);
+  if (diff) bundle.changedSinceLastAudit = diff;
+  return { report: toMarkdown(loc, models, findings, edges, diff), bundle, snapshot, diff };
 }

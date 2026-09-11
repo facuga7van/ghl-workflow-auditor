@@ -12,7 +12,7 @@ const jwt = mins => `eyJhbGciOiJIUzI1NiJ9.${b64u({ exp: Math.floor(Date.now()/10
 function harness({ token = jwt(60), tabUrl = `https://app.gohighlevel.com/v2/location/${LOC}/automation`,
                    workflows = [{ id:"w1", name:"WF 1", status:"published", version:2 }],
                    failList = false, poisonId = null } = {}){
-  const store = {};
+  const store = {}, local = {};
   const listeners = [];
   const calls = [];
 
@@ -57,7 +57,10 @@ function harness({ token = jwt(60), tabUrl = `https://app.gohighlevel.com/v2/loc
         query: async () => [{ id: 7, url: tabUrl, title: "Acme Co | HighLevel" }],
       },
       scripting: { executeScript: async () => [{ result: token }, { result: "" }] },
-      storage: { local: { get: async () => ({}) }, session: {
+      storage: { local: {
+        get: async k => Object.fromEntries([].concat(k).map(x => [x, local[x]])),
+        set: async o => { Object.assign(local, o); },
+      }, session: {
         set: async o => { Object.assign(store, o); },
         get: async k => Object.fromEntries([].concat(k).map(x => [x, store[x]])),
         remove: async k => { delete store[k]; },
@@ -69,7 +72,7 @@ function harness({ token = jwt(60), tabUrl = `https://app.gohighlevel.com/v2/loc
   for (const f of ["core.js", "audit.js", "background.js"])
     vm.runInContext(fs.readFileSync(path.join(__dirname, f), "utf8"), ctx, { filename: f });
 
-  return { ctx, store, calls, send: msg => listeners[0](msg, {}, () => {}) };
+  return { ctx, store, local, calls, send: msg => listeners[0](msg, {}, () => {}) };
 }
 
 const settle = async (store, ms = 4000) => {
@@ -190,5 +193,33 @@ const settle = async (store, ms = 4000) => {
     assert.strictEqual(listCalls, 1, "a concurrent start must be ignored, not queued");
   }
 
-  console.log("ok  -  service worker flow: 8 scenarios");
+  // --- a second run reports what changed since the first ------------------
+  // This is what turns a one-off audit into something you open twice.
+  {
+    const wf = v => [{ id:"w1", name:"WF 1", status:"published", version:v },
+                     { id:"w2", name:"WF 2", status:"draft", version:1 }];
+    const h = harness({ workflows: wf(2) });
+    h.send({ type: "start", tabId: 7 });
+    await settle(h.store);
+    assert.ok(!h.store.result.bundle.changedSinceLastAudit, "the first run has nothing to compare against");
+    assert.ok(h.local["snap:" + LOC], "the snapshot must persist across runs");
+
+    // same account, one workflow edited and one published since
+    const h2 = harness({ workflows: [{ id:"w1", name:"WF 1", status:"published", version:5 },
+                                     { id:"w2", name:"WF 2", status:"published", version:1 }] });
+    Object.assign(h2.local, h.local);
+    h2.send({ type: "start", tabId: 7 });
+    const prog = await settle(h2.store);
+    assert.strictEqual(prog.status, "done");
+
+    const d = h2.store.result.bundle.changedSinceLastAudit;
+    assert.ok(d, "a second run against a changed account must say what moved");
+    assert.strictEqual(d.changed.length, 2);
+    assert.ok(h2.store.result.report.includes("Changed since the last audit"),
+      "and it has to be at the top of the report, not only in the JSON");
+    assert.ok(d.changed.some(c => c.how.includes("v2 -> v5")));
+    assert.ok(d.changed.some(c => c.how.includes("draft -> published")));
+  }
+
+  console.log("ok  -  service worker flow: 9 scenarios");
 })().catch(e => { console.error("FAIL  " + e.message); process.exit(1); });
