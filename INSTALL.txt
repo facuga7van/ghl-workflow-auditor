@@ -34,8 +34,11 @@ INSTALL  (once)
 USE IT
 ------
 
-1. Open the sub-account in GoHighLevel. Any screen inside it works, as
-   long as the URL has  /location/<something>/  in it.
+1. Open the sub-account in GoHighLevel, go to Automations, and OPEN ANY
+   WORKFLOW.
+
+   This part matters. GoHighLevel only loads the session token once a
+   workflow builder is open. From the dashboard it has nothing to read.
 
 2. Click the GHL Workflow Auditor icon.
 
@@ -76,8 +79,9 @@ Chrome will nag you about "developer mode extensions" every time it
 starts. That is expected for an unpacked extension and it is safe to
 dismiss.
 
-If the popup says it cannot find a GoHighLevel tab, make sure you are
-signed in and sitting inside a sub-account, not on the agency dashboard.
+If the popup cannot read the session, you are almost certainly not
+inside a workflow. Go to Automations, open any workflow, and click the
+icon again.
 
 
 UPDATES
