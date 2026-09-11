@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GHL Workflow Auditor",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Audits a GoHighLevel sub-account: pulls every workflow and tells you where it is silently broken.",
   "permissions": [
     "scripting",

@@ -106,14 +106,18 @@ $("#again").onclick = start;
 
 // Focus the report tab if it is already open. Clicking three times should not
 // leave you with three identical tabs to close.
-$("#open").onclick = async () => {
-  const url = chrome.runtime.getURL("panel.html");
+async function openPanel(query = ""){
+  const url = chrome.runtime.getURL("panel.html") + query;
   try {
     const [open] = await chrome.tabs.query({ url });
     if (open) return chrome.tabs.update(open.id, { active: true });
   } catch (e) { /* fall through to opening a new one */ }
   chrome.tabs.create({ url });
-};
+}
+$("#open").onclick = () => openPanel();
+// Reachable with nothing audited yet, which is the whole point of an example:
+// the report page itself cannot be opened before a first run.
+$("#demo").onclick = e => { e.preventDefault(); openPanel("?demo=1"); };
 
 $("#dlmd").onclick = async () => {
   const r = await grab(); download(r.report, `audit-${stamp(r)}.md`, "text/markdown");
