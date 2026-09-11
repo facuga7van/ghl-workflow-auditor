@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "GHL Workflow Auditor",
+  "version": "1.0.0",
+  "description": "Audits a GoHighLevel sub-account: pulls every workflow and tells you where it is silently broken.",
+  "permissions": [
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://app.gohighlevel.com/*",
+    "https://*.gohighlevel.com/*",
+    "https://*.msgsndr.com/*",
+    "https://*.leadconnectorhq.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Audit this GHL sub-account",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "homepage_url": "https://github.com/facuga7van/ghl-workflow-auditor"
+}

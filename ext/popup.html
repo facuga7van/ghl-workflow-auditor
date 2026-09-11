@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --bg:#0f1115; --line:#252a34; --txt:#e6e8ec; --dim:#8b93a1;
+    --acc:#5b9dff; --ok:#3fb950; --hi:#f85149; --md:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;width:360px;background:var(--bg);color:var(--txt);
+       font:13.5px/1.5 ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif}
+  .pad{padding:16px}
+  .head{display:flex;gap:9px;align-items:center;margin-bottom:3px}
+  .dot{width:8px;height:8px;flex:0 0 8px;border-radius:50%;background:#6e7681}
+  .dot.on{background:var(--ok)} .dot.bad{background:var(--hi)}
+  .dot.run{background:var(--acc);animation:pulse 1.1s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.25}}
+  .title{font-weight:650;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta{color:var(--dim);font-size:11.5px;margin:0 0 14px 17px;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  code{background:#0b0d12;padding:1px 5px;border-radius:4px;font-size:11px;
+       font-family:ui-monospace,Consolas,monospace}
+  .bar{height:4px;background:#0b0d12;border-radius:3px;overflow:hidden;margin-bottom:7px}
+  .bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .2s}
+  .now{color:var(--dim);font-size:11.5px;height:16px;white-space:nowrap;overflow:hidden;
+       text-overflow:ellipsis;font-family:ui-monospace,Consolas,monospace}
+  .stat{display:flex;gap:18px;margin:4px 0 14px}
+  .stat div{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+  .stat b{display:block;font-size:21px;color:var(--txt);font-weight:650;line-height:1.3;
+          letter-spacing:0;text-transform:none}
+  .stat b.hi{color:var(--hi)}
+  button{width:100%;background:var(--acc);color:#06090f;border:0;border-radius:7px;padding:9px 14px;
+         font-weight:650;font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:7px}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--acc);border:1px solid var(--line)}
+  button.quiet{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:500}
+  .err{color:var(--hi);font-size:12px;margin-bottom:10px}
+  .ver a{color:#5a616e;text-decoration:none}
+  .ver a:hover{color:var(--acc)}
+  .ver{color:#5a616e;font-size:10.5px;text-align:right;margin-top:2px;
+       font-family:ui-monospace,Consolas,monospace}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="pad">
+  <div class="head"><span class="dot" id="dot"></span><span class="title" id="title">GHL Audit</span></div>
+  <p class="meta" id="meta">Looking for your GoHighLevel tab&hellip;</p>
+
+  <div id="running" class="hidden">
+    <div class="bar"><i id="fill"></i></div>
+    <div class="now" id="now"></div>
+  </div>
+
+  <div id="err" class="err hidden"></div>
+
+  <div id="done" class="hidden">
+    <div class="stat">
+      <div><b id="nwf">0</b>workflows</div>
+      <div><b id="nfi">0</b>findings</div>
+      <div><b id="nhi" class="hi">0</b>high</div>
+    </div>
+    <button id="dlmd">Download report (.md)</button>
+    <button id="dljson" class="ghost">Download full data (.json)</button>
+    <button id="open" class="ghost">Open full report</button>
+  </div>
+
+  <button id="go" class="hidden">Audit this account</button>
+  <button id="again" class="quiet hidden">Run again</button>
+
+  <div class="ver"><a id="opts" href="#">rules</a> &middot; <span id="ver"></span></div>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>

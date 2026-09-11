@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GHL Audit - rules</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --line:#252a34; --txt:#e6e8ec; --dim:#8b93a1;
+    --acc:#5b9dff; --ok:#3fb950; --hi:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:40px 22px 80px}
+  h1{font-size:22px;margin:0 0 6px;letter-spacing:-.02em}
+  .sub{color:var(--dim);margin:0 0 26px;font-size:13.5px}
+  h2{font-size:14px;margin:26px 0 6px;font-weight:650}
+  p.help{color:var(--dim);font-size:12.5px;margin:0 0 8px}
+  input,textarea{width:100%;background:#0b0d12;border:1px solid var(--line);color:var(--txt);
+       border-radius:7px;padding:9px 12px;font:12.5px ui-monospace,Consolas,monospace}
+  textarea{min-height:150px;resize:vertical;line-height:1.6}
+  input:focus,textarea:focus{outline:none;border-color:var(--acc)}
+  .row{display:flex;gap:10px;align-items:center;margin-top:18px}
+  button{background:var(--acc);color:#06090f;border:0;border-radius:7px;padding:10px 20px;
+       font-weight:650;font-size:14px;cursor:pointer;font-family:inherit}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:500}
+  .msg{font-size:13px}
+  .ok{color:var(--ok)} .bad{color:var(--hi)}
+  code{background:#0b0d12;padding:1.5px 5px;border-radius:4px;font-size:12px;
+       font-family:ui-monospace,Consolas,monospace}
+  .note{border-left:2px solid var(--line);padding-left:13px;color:var(--dim);font-size:12.5px;margin:22px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Your own rules</h1>
+  <p class="sub">
+    Out of the box the auditor only reports things that are broken in <b>any</b> GoHighLevel
+    account. Everything here is optional and teaches it the conventions of <b>your</b> stack.
+    Leave it all empty and nothing below is ever checked.
+  </p>
+
+  <h2>Deprecated tag prefixes</h2>
+  <p class="help">
+    Comma separated. Any workflow that still applies a tag starting with one of these is
+    flagged HIGH. Use it when you migrated a tag family and something out there still writes
+    the old one &mdash; that fails silently, which is why it is worth a detector.
+    Example: <code>legacy-, old-crm-</code>
+  </p>
+  <input id="dep" placeholder="legacy-, old-crm-">
+
+  <h2>Suggest the new name</h2>
+  <p class="help">
+    Optional. If your migration was a straight prefix swap, the finding can tell you the live
+    name instead of making you remember it. Two values, comma separated: <code>from, to</code>.
+    Example: <code>legacy-, current-</code>
+  </p>
+  <input id="swap" placeholder="legacy-, current-">
+
+  <h2>Routing tag prefixes</h2>
+  <p class="help">
+    Comma separated. Tags in this family pick a destination: a phone line, an inbox, a channel,
+    an assignee. If a workflow applies one that does <b>not exist</b> in the account, the routing
+    silently goes nowhere. Flagged HIGH. Example: <code>route-, line-</code>
+  </p>
+  <input id="route" placeholder="route-, line-">
+
+  <h2>Funnel / landing page id pattern</h2>
+  <p class="help">
+    A regular expression with one capture group, matched against the URL of every Webhook step.
+    If the account posts to more than one id, you get a HIGH finding about split attribution:
+    two campaigns sharing one trigger tag means one gets credited the other's conversions.
+    Example: <code>/funnel/([a-f0-9]{12,})</code>
+  </p>
+  <input id="funnel" placeholder="/funnel/([a-f0-9]{12,})">
+
+  <div class="note">
+    <b>Sharing a setup with your team?</b> Hit <b>Export</b>, commit the JSON somewhere private,
+    and everyone pastes it under <b>Import</b>. The extension itself stays generic, so you can
+    pull updates without ever touching your own config.
+  </div>
+
+  <h2>Import / export</h2>
+  <textarea id="json" spellcheck="false"></textarea>
+
+  <div class="row">
+    <button id="save">Save</button>
+    <button id="load" class="ghost">Export to the box</button>
+    <button id="apply" class="ghost">Import from the box</button>
+    <button id="clear" class="ghost">Reset</button>
+    <span class="msg" id="msg"></span>
+  </div>
+</div>
+<script src="options.js"></script>
+</body>
+</html>

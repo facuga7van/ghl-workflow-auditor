@@ -1,0 +1,105 @@
+GHL WORKFLOW AUDITOR  --  Chrome extension
+
+Reads every workflow in a GoHighLevel sub-account and tells you where it
+is silently broken.
+
+  https://github.com/facuga7van/ghl-workflow-auditor
+
+
+INSTALL  (once)
+---------------
+
+1. Unzip this folder somewhere PERMANENT.
+
+   Not Downloads, not the Desktop, not a temp folder. Chrome loads the
+   extension from this exact path every time it starts, so if you move it
+   or delete it later, the extension breaks.
+
+   Something like  C:\Tools\ghl-workflow-auditor  is fine.
+
+2. Open Chrome and go to:   chrome://extensions
+
+3. Turn ON "Developer mode" (toggle, top right).
+
+4. Click "Load unpacked" and pick the folder you unzipped in step 1.
+
+   The folder picker will look empty. That is normal: it only lists
+   subfolders and there are none. Just click "Select folder" while you
+   are inside it.
+
+5. Pin the icon: click the puzzle-piece icon in the toolbar, then the
+   pin next to "GHL Workflow Auditor".
+
+
+USE IT
+------
+
+1. Open the sub-account in GoHighLevel. Any screen inside it works, as
+   long as the URL has  /location/<something>/  in it.
+
+2. Click the GHL Workflow Auditor icon.
+
+That is it. The audit starts on its own and the popup shows the progress.
+
+You can close the popup while it runs. The audit does not live in the
+popup, so nothing is lost: reopen it and the progress is right there.
+
+When it finishes you get:
+
+  Download report (.md)      the findings, ready to read or paste
+  Download full data (.json) every step of every workflow, for an AI agent
+  Open full report           the whole thing as a page
+
+
+YOUR OWN RULES
+--------------
+
+Out of the box it only reports things that are broken in ANY GoHighLevel
+account. Click "rules" at the bottom of the popup to teach it your own
+conventions: tag families you migrated away from, tag prefixes that route
+to a line or an inbox, your funnel id format.
+
+All optional. Leave it empty and none of it is ever checked.
+
+If your team already has a setup, someone can Export it as JSON and you
+paste it under Import.
+
+
+NOTES
+-----
+
+Nothing is uploaded anywhere. The extension talks to GoHighLevel and to
+nothing else. Your session is read from the tab you have open and is
+never written to disk. It never writes to your account: read only.
+
+Chrome will nag you about "developer mode extensions" every time it
+starts. That is expected for an unpacked extension and it is safe to
+dismiss.
+
+If the popup says it cannot find a GoHighLevel tab, make sure you are
+signed in and sitting inside a sub-account, not on the agency dashboard.
+
+
+UPDATES
+-------
+
+1. Unzip the new file somewhere temporary.
+
+2. Copy the FILES from inside the new "ghl-workflow-auditor" folder into
+   the folder you installed from, overwriting.
+
+   Copy the files, NOT the folder. If you drag the whole folder in, you
+   end up with one nested inside the other and Chrome quietly keeps
+   running the old version. No error, no warning.
+
+3. Hit the reload arrow on the GHL Workflow Auditor card in
+   chrome://extensions.
+
+Do not "Load unpacked" a second time or you end up with two copies
+installed and two icons in the toolbar.
+
+Your rules survive an update. They live in Chrome's storage, not in
+these files.
+
+The version you are running is at the bottom of the popup. Check it
+against the zip name before reporting anything broken.

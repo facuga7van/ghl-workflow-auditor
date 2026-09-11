@@ -1,0 +1,10 @@
+dist/
+node_modules/
+*.log
+
+# Never commit an audit result: it is a client's account, dumped.
+*.json
+!ext/manifest.json
+audit-*.md
+workflows-*.json
+session.txt
