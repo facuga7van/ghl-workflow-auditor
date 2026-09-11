@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 RUNTIME=(manifest.json background.js core.js audit.js
-         popup.html popup.js panel.html panel.js options.html options.js)
+         popup.html popup.js panel.html panel.js options.html options.js demo.js)
 ICONS=(icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png)
 
 for f in "${RUNTIME[@]}" "${ICONS[@]}"; do

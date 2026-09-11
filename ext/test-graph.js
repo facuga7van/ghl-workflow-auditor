@@ -253,4 +253,51 @@ const only = (name, templates, triggers = [], counts = [], status = "published")
   assert.strictEqual(fileStem("  Trailing  ", "L"), `Trailing-${day}`, "no dangling dash before the date");
 }
 
+// --- the demo account has to keep working ----------------------------------
+// It is what the Web Store screenshots are taken from and what someone sees
+// before they run their first audit. Its findings come from the REAL detectors,
+// so if one changes and the demo stops showing a spread of them, the screenshots
+// quietly become a lie about what the tool does.
+{
+  const vm = require("vm");
+  const ctx = { console, JSON, Date, Math, Set, Map, Object, Array, String,
+                Number, Boolean, RegExp, Error, Symbol };
+  vm.createContext(ctx);
+  for (const f of ["core.js", "demo.js"])
+    vm.runInContext(require("fs").readFileSync(require("path").join(__dirname, f), "utf8"), ctx, { filename: f });
+
+  const r = vm.runInContext("demoResult()", ctx);
+  const b = r.bundle;
+
+  assert.ok(r.demo && b.meta.demo, "the demo must be labelled as one, on screen and in the dump");
+  assert.strictEqual(b.meta.account, "Northwind Plumbing");
+  assert.ok(!/[0-9a-f]{20}/i.test(b.meta.locationId), "the demo location id must not look like a real one");
+
+  assert.ok(b.summary.workflows >= 10, "a two-workflow screenshot does not show anything");
+  assert.ok(b.summary.findings >= 25, "got " + b.summary.findings + " findings");
+  assert.ok(b.summary.edges >= 2, "the graph section must not be empty in a screenshot");
+  assert.ok(b.boundaries.length >= 1, "and neither must the boundaries section");
+
+  const rules = new Set(b.findings.map(f => f.rule));
+  assert.ok(rules.size >= 18, "only " + rules.size + " distinct rules: the demo stopped covering the catalogue");
+  for (const must of ["loops back on itself", "assigns to nobody", "merge field with no gate",
+                      "wait for reply", "contains collision", "duplicate trigger",
+                      "stage crossed instantly", "unreachable step", "branch with no else"])
+    assert.ok(rules.has(must), "the demo no longer demonstrates: " + must);
+
+  assert.ok(b.findings[0].live && b.findings[0].contactsInWorkflow > 0,
+    "the top row is the screenshot: it has to be something happening to real people");
+  // ...and among equals, the most exposed goes first. Two HIGH findings both
+  // live and both with people in them can only be ordered by head count.
+  const highs = b.findings.filter(f => f.severity === "HIGH" && f.contactsInWorkflow > 0);
+  assert.ok(highs.length >= 2, "the demo needs at least two comparable HIGH findings");
+  // Spread both sides here on purpose: these objects come out of a vm context,
+  // so their Array prototype is not this realm's and deepStrictEqual would fail
+  // on identical values.
+  const counts = [...highs.map(f => f.contactsInWorkflow)];
+  assert.deepStrictEqual(counts, [...counts].sort((x, y) => y - x),
+    "equally severe findings must be ordered by how many people are exposed");
+  assert.ok(r.report.includes("# Workflow audit"), "the demo must also produce a downloadable report");
+}
+
 console.log("ok  -  graph traversal, opportunities, assignment, impact, drift");

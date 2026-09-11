@@ -166,15 +166,29 @@ https://facuga7van.github.io/ghl-workflow-auditor/PRIVACY
 
 ## Screenshots
 
-At least one, 1280x800 PNG. Take them yourself on a real account — a fabricated screenshot is grounds for rejection, and it would be a lie besides.
+At least one, 1280x800 PNG.
+
+**Never use a real client account.** Their workflow names, tags and pipeline stages are their data, and a Web Store listing is public forever.
+
+Use the built-in example account instead:
+
+```
+chrome-extension://<your-extension-id>/panel.html?demo=1
+```
+
+Easiest way to get there: open the report page with no audit run, and click **see an example report**.
+
+That is a fictional plumbing company run through the **real detectors**. Nothing in it is drawn or faked — the findings are produced by the same code that runs on a live account, over invented workflows. It is honest about what the tool does and it exposes nobody.
+
+The page is marked **EXAMPLE ACCOUNT** in the header, which is worth leaving visible in the screenshot.
 
 Worth capturing, in order of usefulness:
 
-1. **The full report with findings.** Open the report page, turn on `group by workflow`. Zoom the browser out so a good number of rows fit.
-2. **The popup just after a run.** Shows the HIGH / MEDIUM / LOW breakdown and the buttons.
-3. **The popup mid-run.** The progress bar with a workflow name under it makes what it does obvious at a glance.
+1. **The report with findings.** Zoom the browser to about 80% so a good number of rows fit. Try it both flat and with `group by workflow` on, and use whichever reads better.
+2. **The popup after a run.** This one has to come from a real audit, since the popup reads live state. Only the account name and the counts are visible — blur the name, or run it against a throwaway sub-account of your own.
+3. **The popup mid-run.** The progress bar with a workflow name under it explains what the thing does at a glance. Same caveat as above.
 
-Blur or rename anything that identifies a client before uploading. The account name sits at the top of the report page and in the popup title.
+If you only upload one, upload the first: it is the demo account, so there is nothing to blur at all.
 
 ---
 

@@ -153,18 +153,27 @@ $("#fgroup").onclick = e => {
 $("#q").addEventListener("input", e => { view.q = e.target.value; paintFindings(); });
 
 async function load(){
-  const { result, prog } = await chrome.storage.session.get(["result", "prog"]);
+  // ?demo=1 renders a made-up account through the real detectors. It is how the
+  // report can be shown to someone without putting a client's workflows on
+  // screen, and it is a better empty state than a line of grey text.
+  const demo = new URLSearchParams(location.search).get("demo");
+  const { result, prog } = demo
+    ? { result: demoResult() }
+    : await chrome.storage.session.get(["result", "prog"]);
+
   if (!result){
-    $("#head").textContent = prog && prog.status === "running"
+    $("#head").innerHTML = prog && prog.status === "running"
       ? "Audit still running: leave this open, it will fill in."
-      : "Nothing audited yet. Open a workflow in GoHighLevel and click the extension icon.";
+      : `Nothing audited yet. Open a workflow in GoHighLevel and click the extension icon.
+         &nbsp;&middot;&nbsp; <a href="panel.html?demo=1">see an example report</a>`;
     return;
   }
   RESULT = result;
   document.title = (result.title || result.loc) + " - GHL Audit";
   $("#head").innerHTML = `<b>${h(result.title || "")}</b> <code>${h(result.loc)}</code>`
     + ` &nbsp;&middot;&nbsp; ${new Date(result.bundle.meta.generatedAt).toLocaleString()}`
-    + ` &nbsp;&middot;&nbsp; v${h(chrome.runtime.getManifest().version)}`;
+    + ` &nbsp;&middot;&nbsp; v${h(chrome.runtime.getManifest().version)}`
+    + (result.demo ? ` &nbsp;&middot;&nbsp; <b class="demo">EXAMPLE ACCOUNT</b>` : "");
   $("#actions").classList.remove("hidden");
   $("#filters").classList.remove("hidden");
   render(result.bundle);
