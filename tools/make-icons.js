@@ -45,12 +45,13 @@ function line(c, x1, y1, x2, y2, w, rgb){
   }
 }
 
-function draw(size){
+function draw(size, plate = true){
   const n = size * SS, c = canvas(n);
   const u = n / 32;                       // one unit = 1/32 of the icon
 
-  // background plate, so it reads on a light or a dark toolbar
-  rrect(c, 0, 0, n, n, 7 * u, BG);
+  // background plate, so it reads on a light or a dark toolbar. The promo tiles
+  // sit on their own background and want the mark alone, so it is optional.
+  if (plate) rrect(c, 0, 0, n, n, 7 * u, BG);
 
   const nodeW = 9 * u, nodeH = 6 * u, r = 1.6 * u;
   const topX = (n - nodeW) / 2, topY = 4 * u;
@@ -131,3 +132,9 @@ for (const size of [16, 32, 48, 128]){
   console.log(`  ${size}x${size}  ${fs.statSync(file).size} bytes`);
 }
 console.log("icons written to ext/icons/");
+
+// The promo tiles compose this over their own background, so it ships without
+// the plate and big enough that scaling it down stays crisp.
+const mark = path.join(__dirname, "mark512.png");
+fs.writeFileSync(mark, png(draw(512, false), 512));
+console.log(`  mark512.png (no plate, for the promo tiles)  ${fs.statSync(mark).size} bytes`);

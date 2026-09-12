@@ -79,6 +79,30 @@ Not affiliated with or endorsed by GoHighLevel.
 
 ---
 
+## Additional fields
+
+**Official URL:** leave as **None**.
+
+That dropdown only lists sites already verified in Google Search Console. Verifying `facuga7van.github.io` is possible but buys nothing — the only effect is a "verified site" badge on a listing that is unlisted anyway.
+
+**Homepage URL**
+
+```
+https://github.com/facuga7van/ghl-workflow-auditor
+```
+
+The repository rather than the Pages site: releases, source and README are all there, which is where someone deciding whether to trust an extension that reads their session wants to land.
+
+**Support URL**
+
+```
+https://github.com/facuga7van/ghl-workflow-auditor/issues
+```
+
+**Mature content:** No.
+
+---
+
 ## Privacy tab
 
 **Single purpose**
