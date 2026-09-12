@@ -300,4 +300,55 @@ const only = (name, templates, triggers = [], counts = [], status = "published")
   assert.ok(r.report.includes("# Workflow audit"), "the demo must also produce a downloadable report");
 }
 
+// --- the five detectors that had no test at all -----------------------------
+// Found by diffing the rules in detect() against the strings any test asserts
+// on. Changing one of these used to break nothing.
+{
+  // A channel filter only fails when the channel arrives through a custom
+  // provider. Native WhatsApp exists, so this asks you to check rather than
+  // asserting the filter is broken -- and it is MEDIUM for that reason.
+  const chan = only("Channel", [], [{ type: "customer_reply",
+    conditions: [{ field: "message.channel", operator: "is", value: "WhatsApp" }] }]);
+  assert.strictEqual(sevOf(detect([chan], new Set(), new Set()), "channel filter"), "MEDIUM",
+    "asserting it never matches would be a confident falsehood on a native setup");
+  const plain = only("Plain", [], [{ type: "customer_reply",
+    conditions: [{ field: "message.channel", operator: "is", value: "SMS" }] }]);
+  assert.ok(!has(detect([plain], new Set(), new Set()), "channel filter"), "SMS is not a finding");
+
+  // A condition wait tests whether something is TRUE, not whether it CHANGED.
+  const cond = a => only("Waiter" + a, [
+    step("c0", "update_contact_field", "c1", { fields: a ? [{ field: "reply_status", value: "" }] : [] }),
+    step("c1", "wait", null, { type: "condition", condition: { branches: [{ segments: [
+      { conditions: [{ conditionSubType: "reply_status", conditionOperator: "has_value" }] }] }] } }, "Wait"),
+  ]);
+  assert.strictEqual(sevOf(detect([cond(false)], new Set(), new Set()), "condition wait never resets"), "MEDIUM",
+    "nothing clears the field, so an already-set value ends the wait instantly");
+  assert.ok(!has(detect([cond(true)], new Set(), new Set()), "condition wait never resets"),
+    "clearing the field upstream is exactly the fix");
+
+  // People sitting inside a workflow right now, which is what makes editing it risky.
+  const busy = extract({ id: "B", name: "Busy", status: "published" },
+    { workflowData: { templates: [step("s1", "wait", null, { type: "time" })] } },
+    [], [{ count: 40 }, { count: 2 }], {});
+  const f = detect([busy], new Set(), new Set());
+  assert.strictEqual(sevOf(f, "contacts in flight"), "MEDIUM");
+  assert.ok(f.find(x => x.rule === "contacts in flight").msg.includes("42"),
+    "the count has to be the total across steps, not just the first one");
+  assert.ok(!has(detect([only("Quiet", [step("s1", "wait", null, {})])], new Set(), new Set()),
+    "contacts in flight"), "an empty workflow is not busy");
+
+  // A field a trigger watches that no workflow writes: someone or something
+  // outside has to set it.
+  const watch = extract({ id: "W", name: "Watcher", status: "published" },
+    { workflowData: { templates: [step("s1", "sms", null, { message: "hi" })] } },
+    [{ type: "contact_changed", conditions: [{ field: "contact.lead_score" }] }], [], {});
+  assert.strictEqual(sevOf(detect([watch], new Set(["lead_score"]), new Set()),
+    "field written outside workflows"), "LOW");
+
+  // An opportunity with no stage lands on whatever the pipeline defaults to.
+  const noStage = only("NoStage", [step("o1", "internal_create_opportunity", null,
+    { pipelineId: "P", __customInputFields__: [{ filterField: "name", value: "x" }] }, "Create")]);
+  assert.strictEqual(sevOf(detect([noStage], new Set(), new Set()), "opportunity with no stage"), "MEDIUM");
+}
+
 console.log("ok  -  graph traversal, opportunities, assignment, impact, drift");

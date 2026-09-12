@@ -280,10 +280,14 @@ function detect(models, fieldKeys, accountTags, rules){
       if (["appointment","customer_appointment"].includes(tr.type) && !fields.some(f => f.includes("calendar")))
         add("HIGH", wf, "appointment trigger with no calendar",
             "appointment trigger has no calendar filter: fires for EVERY calendar in the account");
+      // Only true when the channel arrives through a custom provider, which is
+      // common but not universal — GoHighLevel has native WhatsApp. Stating it
+      // as a fact would be a confident falsehood on a native setup, so this
+      // asks you to check rather than telling you what is wrong.
       for (const c of conds)
         if (/imessage|whatsapp/i.test(JSON.stringify(c.value || "")))
-          add("HIGH", wf, "channel filter",
-              "every channel is overridden to SMS: a filter on iMessage/WhatsApp never matches");
+          add("MEDIUM", wf, "channel filter",
+              "this filters on a specific channel. If that channel reaches the account through a custom provider rather than natively, everything arrives tagged as SMS and this condition never matches. Check which one this account uses");
     }
     for (const tg of [...m.tagsAdded, ...m.tagsRemoved])
       if (startsAny(tg, R.deprecatedTagPrefixes)){
@@ -319,7 +323,7 @@ function detect(models, fieldKeys, accountTags, rules){
       const bad = [...new Set([...c.body].filter(ch => ch.charCodeAt(0) > 127))];
       if (bad.length)
         add("MEDIUM", wf, "encoding in copy",
-            `\`${c.node}\` has non-ASCII characters (${bad.slice(0,6).join("")}): they break in the plugin`);
+            `\`${c.node}\` has non-ASCII characters (${bad.slice(0,6).join("")}): an em dash or a curly quote forces the whole message out of the GSM-7 alphabet, which halves the characters per segment and is mangled outright by some providers`);
       ctxStep = null;
     }
     if (Array.isArray(m.counts) && m.counts.length){

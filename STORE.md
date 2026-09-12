@@ -137,22 +137,26 @@ Used for three things, all local to the browser:
 No data is synced, uploaded or shared. The session token is never written to storage.
 ```
 
-**Host access to `app.gohighlevel.com`, `*.gohighlevel.com`, `*.msgsndr.com`**
+**Host permissions** (one justification covers all four)
 
 ```
-These are the domains GoHighLevel serves its application from, including the white-label domains agencies use. The extension needs to identify which GoHighLevel tab the user has open and read the existing session from it, so it can query that user's own account.
-```
+All four hosts belong to GoHighLevel, the product this extension audits.
 
-**Host access to `*.leadconnectorhq.com`**
+app.gohighlevel.com, *.gohighlevel.com and *.msgsndr.com are the domains GoHighLevel serves its application from, including the white-label domains agencies use. The extension needs them to identify which GoHighLevel tab the user already has open and read the existing session from it.
 
-```
-This is GoHighLevel's own API backend. Every request the extension makes goes here, to read the user's workflows, custom fields and tags. These are read-only GET requests, made with the user's own existing session.
+*.leadconnectorhq.com is GoHighLevel's own API backend. Every request the extension makes goes there, to read the user's own workflows, custom fields, tags and pipelines. All of them are read-only GET requests made with the user's existing session. The extension never writes to the account.
+
+No other host is requested, and the extension does not run on any site outside this list.
 ```
 
 **Remote code**
 
+Select **No, I am not using remote code**, and justify it with:
+
 ```
-No, I am not using remote code.
+The extension executes only the JavaScript included in its package. There is no build step, no bundler and no minification, so the files reviewed are exactly the files that run.
+
+It does not load scripts from any remote source, does not use eval or new Function on fetched content, and does not fetch configuration that changes its behaviour. The only network requests it makes return JSON that is read as data and rendered as a report.
 ```
 
 ### Data usage — what to tick

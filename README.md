@@ -87,6 +87,7 @@ Everything here produces **no error message** in GoHighLevel. That's the selecti
 | `appointment trigger with no calendar` | Fires for **every** calendar in the account, not just yours |
 | `tag does not exist` | The trigger waits for a tag that isn't in the account. It will never fire |
 | `tag nobody writes` | The tag exists, but no workflow applies it. Something outside has to, or it's dead |
+| `channel filter` | A filter on a specific channel. If that channel arrives through a custom provider it all lands as SMS and the condition never matches |
 | `duplicate trigger` | Two published workflows on the same trigger with identical conditions. Both run, in no set order |
 | `no trigger` | Published, with steps, no trigger. Only reachable via Add to Workflow |
 
@@ -108,7 +109,7 @@ Everything here produces **no error message** in GoHighLevel. That's the selecti
 | `merge field with no gate` | Nothing upstream checks the field has a value. GoHighLevel doesn't abort, it sends the sentence with a hole in it |
 | `invalid merge field` | `{{contact.custom.x}}` — that segment doesn't exist. Renders empty |
 | `bare link` | A URL in an SMS with no trigger link. The click fires nothing |
-| `encoding in copy` | Em dashes, curly quotes, accents that break in some SMS providers |
+| `encoding in copy` | An em dash or curly quote forces the message out of GSM-7: half the characters per segment, and mangled by some providers |
 | `webhook points at a test endpoint` | localhost, ngrok or webhook.site left in a live workflow |
 
 **Settings and health** — toggles you can't see on the canvas, plus the obvious
